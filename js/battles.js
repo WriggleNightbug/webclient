@@ -100,6 +100,7 @@ function BattleTab(pid, conf, team) {
     this.id = pid;
     this.conf = conf;
     this.pokes = {};
+    this.choices = {};
     this.spectators = {};
     /* PO separates damage message ("hurt by burn") and damage done. So we remember each damage message so we can give it
         together with the damage done to the Showdown window.
@@ -116,21 +117,26 @@ function BattleTab(pid, conf, team) {
         var myname = players.name(players.myid);
         var chatElem = '<form onsubmit="return false" class="chatbox"><label style="' + hashColor(toId(myname)) + '">' + sanitize(myname) +
             ':</label> <textarea class="ps-textbox" type="text" size="70" history="true" autofocus="true" id="send-battle-'+this.id+'" onkeydown="if(event.keyCode==13)sendMessage(this);" ></textarea></form>';
-        $content.html('<div class="battlewrapper"><div class="battle">Loading battle...</div><div class="foehint"></div><div class="battle-log"></div><div class="battle-log-add">'+ chatElem +'</div><div class="replay-controls"></div></div>'
-                                 +'<div id="chatTextArea" class="textbox"></div><p><button onClick="battles.battle(' + pid + ').close();">Close</button></p>');
+        $content.html('<div class="battlewrapper">' +
+            '<div class="battle">Loading battle...</div><div class="foehint"></div><div class="battle-log"></div><div class="battle-log-add">'+ chatElem +'</div>' +
+            '<div class="replay-controls"></div>' +
+            '</div>'
+            +'<div id="chatTextArea" class="textbox"></div><p><button onClick="battles.battle(' + pid + ').close();">Close</button></p>');
         battles.battles[pid] = this;
         switchToTab("#battle-"+pid);
 
         var $battle;
         this.battleElem = $battle = $content.find('.battle');
-        this.controlsElem = $content.find('.replay-controls');
-        var $chatFrame = this.chatFrameElem = $content.find('.battle-log');
+        this.$controls = $content.find('.replay-controls');
+        this.$controls.click(this, this.dealWithControlsClick);
+
+        var $chatFrame = this.$chatFrame = this.chatFrameElem = $content.find('.battle-log');
 /*
         this.chatElem = null;*/
         this.chatAddElem = $content.find('.battle-log-add');
         /*this.chatboxElem = null;
         this.joinElem = null;*/
-        this.foeHintElem = $content.find('.foehint');
+        this.$foeHint = $content.find('.foehint');
 
         /* Create a showdown battle window */
         this.battle = new Battle($battle, $chatFrame);
@@ -140,7 +146,8 @@ function BattleTab(pid, conf, team) {
         this.battle.runMajor(["gametype", "singles"]);//could use this.conf.mode
 
         if (team) {
-            this.convertTeamToPS(team, conf.players[1] == players.myid ? 1 : 0);
+            this.myself = conf.players[1] == players.myid ? 1 : 0;
+            this.convertTeamToPS(team, this.myself);
             this.updateSide(this.request.side, false);
         }
 
@@ -162,7 +169,7 @@ function BattleTab(pid, conf, team) {
 
     this.print("conf: " + JSON.stringify(conf));
     if (team) {
-        this.print("team: " + JSON.stringify(team));
+        //this.print("team: " + JSON.stringify(team));
     }
 }
 
@@ -190,11 +197,12 @@ BattleTab.prototype.initPSBattle = function(data)
         if (yourPokemon) {
             text += '<div style="position:absolute;top:90px;left:390px;width:100px;height:100px;"' + selfR.tooltipAttrs(yourPokemon.ident, 'pokemon', true, 'foe') + '></div>';
         }
-        selfR.foeHintElem.html(text);
+        selfR.$foeHint.html(text);
 
         if (!selfR.me.request) {
-            selfR.controlsElem.html('<div class="controls"><em>Waiting for players...</em></div>');
-            return;
+            selfR.me.request = selfR.request;
+            //selfR.$controls.html('<div class="controls"><em>Waiting for players...</em></div>');
+            //return;
         }
         if (selfR.me.request.side) {
             selfR.updateSide(selfR.me.request.side, true);
@@ -202,8 +210,8 @@ BattleTab.prototype.initPSBattle = function(data)
         selfR.me.callbackWaiting = true;
         var active = selfR.battle.mySide.active[0];
         if (!active) active = {};
-        selfR.controlsElem.html('<div class="controls"><em>Waiting for opponent...</em></div>');
-        this.updateControlsForPlayer();
+        selfR.$controls.html('<div class="controls"><em>Waiting for opponent...</em></div>');
+        selfR.updateControlsForPlayer();
     };
 
     if (this.battle.activityQueue) {
@@ -223,7 +231,7 @@ BattleTab.prototype.initPSBattle = function(data)
         this.battle.stagnateCallback = this.updateJoinButton;
         this.battle.endCallback = this.updateJoinButton;
         this.chatFrameElem.find('.inner').html('');
-        this.controlsElem.html('');
+        this.$controls.html('');
     }
     this.battle.play();
     if (data && data.battlelog) {
@@ -238,13 +246,59 @@ BattleTab.prototype.initPSBattle = function(data)
     }
 };
 
+/** Calls the onXxxxXxxx functions where xxxxXxxx is the name attribute of the button
+ * in the controls that was clicked
+ * @param event the click event
+ * @param battle the object to use as this
+ */
+BattleTab.prototype.dealWithControlsClick = function(event) {
+    var $obj = $(event.target);
+    var battle = event.data;
+    while ($obj.length > 0 && $obj != $(this)) {
+        var name = $obj.attr("name");
+        if (name !== undefined) {
+            var funcName = "onControls"+name[0].toUpperCase()+name.slice(1);
+            if (funcName in BattleTab.prototype) {
+                battle[funcName]($obj);
+                return;
+            }
+        }
+        var oldobj = $obj;
+        $obj = $obj.parent();
+
+        if (oldobj == $obj) {
+            break;
+        }
+    }
+};
+
+/**
+ * Called when a chooseMove button is clicked
+ * @param $obj The button jquery object
+ */
+BattleTab.prototype.onControlsChooseMove = function($obj) {
+    console.log ("move " + $obj.attr("slot") + " ( " + $obj.attr("value") + ") called");
+    var choice = {"type":"attack", "slot":this.myself, "attackSlot": + $obj.attr("slot")};
+    this.choose(choice);
+};
+
+/**
+ * Called when a chooseMove button is clicked
+ * @param $obj The button jquery object
+ */
+BattleTab.prototype.onControlsChooseSwitch = function($obj) {
+    console.log ("poke " + $obj.attr("slot") + " ( " + $obj.attr("value") + ") called");
+    var choice = {"type":"switch", "slot":this.myself, "pokeSlot": + $obj.attr("slot")};
+    this.choose(choice);
+};
+
 BattleTab.prototype.convertTeamToPS = function(team, slot) {
     this.request = this.request || {};
     this.request.side = this.request.side || {};
 
     this.request.side.name = players.myname();
     var id = this.request.side.id = "p" + (1+slot);
-    this.request.active = [{moves:[]}];
+    this.request.active = [{}];
 
     this.request.side.pokemon = team;
 
@@ -266,22 +320,28 @@ BattleTab.prototype.convertTeamToPS = function(team, slot) {
         if (pokemon.moves) {
             if (!pokemon.moveNums) pokemon.moveNums = pokemon.moves;
             pokemon.moves = [];
+            pokemon.moveDetails = [];
 
-            var moveDetails = [];
             for (var j = 0; j < pokemon.moveNums.length; j++) {
                 pokemon.moves[j] = toId(Tools.getMoveName(pokemon.moveNums[j].move));
-                moveDetails.push({
+                pokemon.moveDetails[j] = {
                     'move':Tools.getMoveName(pokemon.moveNums[j].move),
                     'id': pokemon.moves[j],
                     'disabled': false,
                     'maxpp': pokemon.moveNums[j].totalpp,
                     'pp': pokemon.moveNums[j].pp
-                });
+                };
             }
-
-            this.request.active[0].moves.push(moveDetails);
         }
     }
+
+    console.log("finished to convert team to PS");
+};
+
+/* Loads the choices in PS format in this.request.active[x], x being the pokemon slot */
+BattleTab.prototype.loadChoices = function() {
+    this.request.active[0].moves = this.request.side.pokemon[0].moveDetails;
+    console.log("loaded choices");
 };
 
 BattleTab.prototype.playerIds = function() {
@@ -312,10 +372,19 @@ BattleTab.prototype.print = function(msg) {
     chatTextArea.scrollTop = chatTextArea.scrollHeight;
 };
 
+BattleTab.prototype.choose = function(choice)
+{
+    websocket.send("battlechoice|"+this.id+"|"+JSON.stringify(choice));
+};
+
+BattleTab.prototype.isBattle = function() {
+    return this.conf.players[0] == players.myid || this.conf.players[1] == players.myid;
+};
+
 BattleTab.prototype.close = function() {
     delete battles.battles[this.id];
     $('#channel-tabs').tabs("remove", "#battle-" + this.id);
-    if (this.conf.players[0] == players.myid || this.conf.players[1] == players.myid) {
+    if (this.isBattle()) {
         websocket.send("forfeit|"+this.id);
     } else {
         websocket.send("stopwatching|"+this.id);
@@ -343,11 +412,6 @@ BattleTab.prototype.addCommand = function(args, kwargs, preempt) {
     } else {
         this.battle.instantAdd("|"+args.join("|"));
     }
-};
-
-/* dealWithXxxx functions are all called from dealWithCommand */
-BattleTab.prototype.dealWithTurn = function(params) {
-    this.addCommand(["turn",  params.turn]);
 };
 
 /*
@@ -415,188 +479,12 @@ BattleTab.statuses = {
     31: "fnt"
 };
 
-BattleTab.prototype.dealWithSend = function(params) {
-    var poke = params.pokemon;
-    /* Stores the pokemon in memory */
-    this.pokes[params.spot] = poke;
-    this.addCommand(["switch", this.spotToPlayer(params.spot) + "a: " + poke.name, this.pokemonToPS(poke), this.pokemonDetails(poke)]);
-};
-
-BattleTab.prototype.dealWithKo = function(params) {
-    this.addCommand(["faint", this.spotToPlayer(params.spot)]);
-};
-
-BattleTab.prototype.dealWithMove = function(params) {
-    this.addCommand(["move", this.spotToPlayer(params.spot), Tools.getMoveName(params.move)]);
-};
-
-BattleTab.prototype.dealWithHpchange = function(params) {
-    /* Checks & updates the pokemon in memory's life percent */
-    var current = this.pokes[params.spot].percent;
-    this.pokes[params.spot].percent = params.newHP;
-    /* Is it healing or damage? */
-    if (params.newHP > current || params.newHP == 100) {
-        this.addCommand(["-heal", this.spotToPlayer(params.spot), (params.newHP - current) + " " + this.pokemonDetails(this.pokes[params.spot])], this.damageCause);
-    } else {
-        this.addCommand(["-damage", this.spotToPlayer(params.spot), -(params.newHP - current) + " " + this.pokemonDetails(this.pokes[params.spot])], this.damageCause);
-    }
-    this.damageCause = {};
-};
-
-BattleTab.prototype.dealWithHitcount = function(params) {
-    this.addCommand(["-hitcount", this.spotToPlayer(params.spot), params.count]);
-};
-
-BattleTab.prototype.dealWithEffectiveness = function(params) {
-    if (params.effectiveness > 4) {
-        this.addCommand(["-supereffective", this.spotToPlayer(params.spot)]);
-    } else if (params.effectiveness < 4 && params.effectiveness > 0) {
-        this.addCommand(["-resisted", this.spotToPlayer(params.spot)]);
-    } else if (params.effectiveness == 0) {
-        this.addCommand(["-immune", this.spotToPlayer(params.spot)]);
-    }
-};
-
-BattleTab.prototype.dealWithCritical = function(params) {
-    this.addCommand(["-crit", this.spotToPlayer(params.spot)]);
-};
-
-BattleTab.prototype.dealWithMiss = function(params) {
-    this.addCommand(["-miss", this.spotToPlayer(params.spot)]);
-};
-
-BattleTab.prototype.dealWithAvoid = function(params) {
-    this.addCommand(["-avoid", this.spotToPlayer(params.spot)], {"msg":true});
-};
-
-BattleTab.prototype.dealWithBoost = function(params) {
-    if (params.boost > 6) {
-        this.addCommand(["-setboost", this.spotToPlayer(params.spot), Tools.getStatName(params.stat), 6], this.damageCause);
-    } else if (params.boost > 0) {
-        this.addCommand(["-boost", this.spotToPlayer(params.spot), Tools.getStatName(params.stat), params.boost], this.damageCause);
-    } else if (params.boost < 0) {
-        this.addCommand(["-unboost", this.spotToPlayer(params.spot), Tools.getStatName(params.stat), -params.boost], this.damageCause);
-    }
-    this.damageCause = {};
-};
-
-BattleTab.prototype.dealWithStatus = function(params) {
-    var status = BattleTab.statuses[params.status];
-    if (!status || status == "fnt") {
-        return;
-    }
-    if (status == "psn" && params.multiple) {
-        status = "tox";
-    }
-    this.pokes[params.spot].status = params.status;
-    this.addCommand(["-status", this.spotToPlayer(params.spot), status], this.damageCause);
-    this.damageCause = {};
-};
-
-BattleTab.prototype.dealWithStatusdamage = function(params) {
-    this.damageCause.from = BattleTab.statuses[params.status];
-};
-
-BattleTab.prototype.dealWithFail = function(params) {
-    /* Third argument should be what the fail is about */
-    this.addCommand(["-fail", this.spotToPlayer(params.spot)]);
-};
-
-BattleTab.prototype.dealWithPlayerchat = function(params) {
-    var name = players.name(this.conf.players[params.spot]);
-    this.addCommand(["chat", name, params.message], undefined, true);
-};
-
-BattleTab.prototype.dealWithSpectatorjoin = function(params) {
-    this.spectators[params.id] = params.name;
-    this.addCommand(["join", params.name], undefined, true);
-
-    if (this.isCurrent()) {
-        playerList.addPlayer(params.id);
-    }
-};
-
-BattleTab.prototype.dealWithSpectatorleave = function(params) {
-    this.addCommand(["leave", this.spectators[params.id]], undefined, true);
-    delete this.spectators[params.id];
-
-    if (this.isCurrent()) {
-        playerList.removePlayer(params.id);
-    }
-};
-
-BattleTab.prototype.dealWithSpectatorchat = function(params) {
-    var name = this.spectators[params.id];
-    this.addCommand(["chat", name, params.message], undefined, true);
-};
-
-BattleTab.prototype.dealWithNotarget = function(params) {
-    this.addCommand(["-notarget"]);
-};
-
-BattleTab.prototype.dealWithFlinch = function(params) {
-    this.addCommand(["cant", this.spotToPlayer(params.spot), "flinch"]);
-};
-
-BattleTab.prototype.dealWithRecoil = function(params) {
-    this.damageCause.from = "recoil";
-};
-
-BattleTab.prototype.dealWithDrain = function(params) {
-    this.damageCause.from = "drain";
-    this.damageCause.of = this.spotToPlayer(params.spot);
-};
-
-BattleTab.prototype.dealWithAlreadystatus = function(params) {
-    this.addCommand(["-fail", this.spotToPlayer(params.spot), BattleTab.statuses[params.status]]);
-};
-
-BattleTab.prototype.dealWithFeelstatus = function(params) {
-    if (params.status == 6) { //confusion
-        this.addCommand(["-activate", this.spotToPlayer(params.spot), BattleTab.statuses[params.status]]);
-    } else {
-        this.addCommand(["cant", this.spotToPlayer(params.spot), BattleTab.statuses[params.status]]);
-    }
-};
-
-BattleTab.prototype.dealWithFreestatus = function(params) {
-    this.addCommand(["-curestatus", this.spotToPlayer(params.spot), BattleTab.statuses[params.status]]);
-};
-
 BattleTab.weathers = {
     0: "none",
     1: "hail",
     2: "raindance",
     3: "sandstorm",
     4: "sunnyday"
-};
-
-BattleTab.prototype.dealWithWeatherstart = function(params) {
-    var kwargs = {};
-    if (params.permanent) {
-        kwargs.of = this.spotToPlayer(params.spot);
-    }
-    this.addCommand(["-weather", BattleTab.weathers[params.weather]], kwargs);
-};
-
-BattleTab.prototype.dealWithFeelweather = function(params) {
-    this.addCommand(["-weather", BattleTab.weathers[params.weather]], {"upkeep": true});
-};
-
-BattleTab.prototype.dealWithWeatherend = function(params) {
-    this.addCommand(["-weather", "none"]);
-};
-
-BattleTab.prototype.dealWithWeatherhurt = function(params) {
-    this.damageCause.from = BattleTab.weathers[params.weather];
-};
-
-BattleTab.prototype.dealWithSubstitute = function(params) {
-    this.addCommand([params.substitute?"-start":"-end", this.spotToPlayer(params.spot), "Substitute"]);
-};
-
-BattleTab.prototype.dealWithTier = function(params) {
-    this.addCommand(["tier", params.tier]);
 };
 
 BattleTab.clauses = {
@@ -609,674 +497,6 @@ BattleTab.clauses = {
     6: "Species Clause",
     7: "Wifi Battle",
     8: "Self-KO Clause"
-};
-
-BattleTab.prototype.dealWithRated = function(params) {
-    if (params.rated) {
-        this.addCommand(["rated", params.rated]);
-    }
-
-    /* Print the clauses, convert flags to actual clause numbers */
-    var clauses = this.conf.clauses;
-    var i = 0;
-
-    while (clauses > 0) {
-        if (clauses % 2) {
-            this.addCommand(["rule", BattleTab.clauses[i]]);
-        }
-        clauses = Math.floor(clauses/2);
-        i = i+1;
-    }
-
-    this.addCommand(["start"]);
-};
-
-BattleTab.prototype.dealWithChoiceselection = function(params) {
-    this.addCommand(["callback", "decision"]);
-};
-
-/*
- Forfeit,
- Win,
- Tie,
- Close
- */
-BattleTab.prototype.dealWithBattleend = function(params) {
-    if (params.result == 0 || params.result == 1) {
-        this.addCommand(["win", players.name(this.conf.players[params.winner])]);
-    } else if (params.result == 2) {
-        this.addCommand(["tie"]);
-    } else if (params.result == 3) {
-        this.addCommand(["leave", players.name(this.conf.players[0])]);
-        this.addCommand(["leave", players.name(this.conf.players[1])]);
-    }
-};
-
-BattleTab.itemsToPS = {
-    3: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: White herb"])},
-    4: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Focus Band"])},
-    5: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Focus Sash"])},
-    7: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Mental Herb"])},
-    11: function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Power Herb"])},
-    12: function() {this.damageCause.from = "item: Leftovers"},
-    16: function() {this.damageCause.from = "item: Black Sludge"},
-    17: function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Quick Claw"])},
-    18: function() {this.damageCause.from = "item: Berry Juice"},
-    19: [function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Flame Orb"])},
-        function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Toxic Orb"])}],
-    21: function() {this.damageCause.from = "item: Life Orb"},
-    24: function() {this.damageCause.from = "item: Shell Bell"},
-    29: function() {this.damageCause.from = "item: Sticky Barb"},
-    34: function(params) {this.damageCause.from = "item: Rocky Helmet"; this.damageCause.of = this.spotToPlayer(params.spot);},
-    35: [function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Air Balloon"])},
-        function(params) {this.addCommand(["-item", this.spotToPlayer(params.spot), "item: Air Balloon"])}],
-    36: function(params) {this.damageCause.from = "item: " + Tools.getItemName(params.berry); },
-    37: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: " + Tools.getItemName(params.berry)], {from: "gem", move: Tools.getMoveName(params.other)});},
-    38: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Red Card"], {of: this.spotToPlayer(params.foe)});},
-    39: function(params) {this.addCommand(["-enditem", this.spotToPlayer(params.spot), "item: Eject Button"])},
-    40: function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Berserk Gene"])},
-    41: function(params) {this.addCommand(["-activate", this.spotToPlayer(params.spot), "item: Destiny Knot"])}
-//    41: %s's Destiny Knot activated, %f is in love!
-};
-
-BattleTab.prototype.dealWithItemmessage = function(params) {
-    var f = BattleTab.itemsToPS[params.item];
-    if (!f) {
-        return;
-    }
-    if (Array.isArray(f)) {
-        f = f[params.part];
-    }
-    if (!f) {
-        return;
-    }
-    f.call(this, params);
-};
-
-BattleTab.movesToPS = {
-    //1 %f had its energy drained!|%s devoured %f's dreams!|%s sucked up the Liquid Ooze!
-    1: [undefined, undefined, function(params) {this.damageCause.from = "ability: Liquid Ooze"; this.damageCause.of = params.foepoke;}],
-//2 %s surrounded itself with a veil of water!|Aqua ring restored %s's HP.
-    2: [function(params){this.addCommand(["-start", params.srcpoke, "Aqua Ring"])}, function(){this.damageCause.from = "move: Aqua Ring"}],
-//3 A soothing aroma wafted through the area!|A bell chimed!
-    3: function(params){this.addCommand(["-cureteam", params.srcpoke, params.part == 0 ? "Aromatherapy" : "Heal Bell"])},
-//    7 %q attacked!
-//    8 %s hasn't enough energy left!|%s cut its own HP and maximized its Attack!
-    8: [undefined, function() {this.damageCause.from = "Belly Drum"}],
-//9 %s is storing energy!|%s unleashed energy!
-    9: [function(params){this.addCommand(["-start", params.srcpoke, "Bide"]);}, function(params){this.addCommand(["-end", params.srcpoke, "Bide"])}],
-//    10 %s was hurt by %m!|%s is freed from %m!|%f became trapped by swirling magma!
-    10: [function(params){this.damageCause.partiallytrapped = true; this.damageCause.from = "move: "+Tools.getMoveName(params.other)}, undefined, undefined],
-//    11 %s must recharge!
-    11: function(params){this.addCommand(["cant", params.srcpoke, "recharge"]);},
-//    12 %f can no longer escape!
-//    13 %s sprang up!|%s burrowed its way under the ground!|%s hid underwater!|%s flew high up!|%s vanished instantly!|%s took %f in the air!|%s can't attack while in the air!
-    13: function(params){
-        if (params.part < 6) {
-            this.addCommand(["-prepare", params.srcpoke, "move: "+Tools.getMoveName(params.other)]);
-        } else {
-            this.addCommand(["cant", params.srcpoke, "Sky Drop"]);
-        }
-    },
-//14 %s shattered %tf's team protections!
-    14: function(params) {this.addCommand(["-activate", params.srcpoke, "Brick Break"]);},
-//16 %s stole and ate %f's %i!
-    16: function(params) {this.addCommand(["-enditem", params.foepoke, Tools.getItemName(params.other)], {of: params.srcpoke, from: "stealeat"})},
-//17 %s transformed into the %t type!
-    17: function(params) {this.addCommand(["-start", params.srcpoke, "typechange", Tools.getTypeName(params.type)])},
-//    18 %s began charging power!
-    18: function(params) {this.addCommand(["-activate", params.srcpoke, "Charge"])},
-//    19 %s transformed into the %t type!
-    19: function(params) {this.addCommand(["-start", params.srcpoke, "typechange", Tools.getTypeName(params.type)])},
-//    20 %s transformed into the %t type!
-    20: function(params) {this.addCommand(["-start", params.srcpoke, "typechange", Tools.getTypeName(params.type)])},
-//    23 %s stole %f's %i!|%s stole %f's %i!
-    23: function(params) {this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other)], {of: params.foepoke, from: "covet"})},
-//    25 %s cut its own HP and laid a Curse on %f!|%s is afflicted by the Curse!
-    25: [function(params) {this.addCommand(["-start", params.foepoke, "curse"], {of:params.srcpoke})},
-        function() {this.damageCause.from="curse"}],
-//    26 %s took the attacker down with it!|%s is trying to take the foe down with it!
-    26: [function(params){this.addCommand(["-activate", params.srcpoke, "Destiny Bond"])},function(params){this.addCommand(["-singlemove", params.srcpoke, "Destiny Bond"])}],
-//    27 %s protected itself!
-    27: function(params){this.addCommand(["-activate", params.srcpoke, "Protect"])},
-//    28 %f's %m was disabled!|%s's %m is disabled!|%s is no longer disabled!
-    28: [function(params){this.addCommand(["-start", params.foepoke, "Disable", Tools.getMoveName(params.other)])},
-        function(params){this.addCommand(["cant", params.srcpoke, "Disable", Tools.getMoveName(params.other)])},
-        function(params){this.addCommand(["-end", params.srcpoke, "Disable"])}],
-//    29 %s took the %m attack!|%s foresaw an attack!|%s chose Doom Desire as its destiny!
-    29: [function(params){this.addCommand(["-end", params.srcpoke, "move: " + Tools.getMoveName(params.other)])},
-        function(params){this.addCommand(["-start", params.srcpoke, "Future Sight"])},
-        function(params){this.addCommand(["-start", params.srcpoke, "Doom Desire"])}],
-//    31 It doesn't affect %s!
-//32 %f can't use items anymore!|%s can use items again!
-    32: function(params){this.addCommand([params.part == 0 ? "-start" : "-end", params.part == 0 ? params.foepoke :params.srcpoke, "embargo"])},
-//33 %s's Encore ended!|%f received an encore!
-    33: function(params){this.addCommand([params.part == 1 ? "-start" : "-end", params.part == 1 ? params.foepoke :params.srcpoke, "encore"])},
-//35 %s endured the hit!|%s braced itself!
-    35: function(params){this.addCommand([params.part == 1 ? "-singleturn" : "-activate", params.srcpoke, "activate"])},
-//    43 %f's Sturdy made the attack fail!|It's a one hit KO!
-    43: [function(params){this.addCommand(["-activate", params.foepoke, "sturdy"])}, function(){this.addCommand(["-ohko"])}],
-//    45 %s flung its %i!
-    45: function(params){this.addCommand(["-enditem", params.srcpoke, Tools.getItemName(params.other)], {from: "fling"})},
-//    46 %s is getting pumped!
-    46: function(params){this.addCommand(["-start", params.srcpoke, "focusenergy"])},
-//    47 %s lost its focus!|%s is tightening its focus!
-    47: [function(params){this.addCommand(["cant", params.srcpoke, "Focus Punch"])}, function(params){this.addCommand(["-singleturn", params.srcpoke, "focuspunch"])}],
-//    48 %s became the center of attention!
-//    51 %f's %a was suppressed!
-    48: function(params) {this.addCommand(['-endability', params.srcpoke, Tools.getAbilityName(params.other)], {from: "Gastro Acid"})},
-//53 Gravity intensified!|Gravity returned to normal!|%s couldn't stay airbourne because of gravity!|%s's %m was cancelled because of gravity!|%s can't use %m because of gravity!
-    53: function(params) {
-        var part = params.part;
-        if (part < 2) {
-            this.addCommand([part == 0 ? "-fieldstart":"fieldend", "gravity"]);
-        } else if (part == 3) {
-            this.addCommand(["-activate", params.srcpoke, "gravity"]);
-        } else if (part == 4) {
-
-        } else if (part == 5) {
-            this.addCommand(["cant", params.srcpoke, "gravity", Tools.getMoveName(params.other)])
-        }
-    },
-//54 %f's %m lost all its PP because of %s' Grudge!
-    54: function(params) {this.addCommand(["-activate", params.foepoke, "grudge", Tools.getMoveName(params.other)])},
-//    55 %s swapped its boosts with %f!
-    55: function(params) {this.addCommand(["-swapboost", params.srcpoke, params.foepoke])},
-//    57 A hailstorm brewed!|It started to rain!|A sandstorm brewed!|The sunlight turned harsh!
-//    58 %s is in love with %f!|%f fell in love!|%s is immobilized by love!
-    58: [function(params) {this.addCommand(["-activate", params.srcpoke, "attract"], {of: params.foepoke})},
-        function(params) {this.addCommand(["-start", params.foepoke, "attract"])},
-        function(params) {this.addCommand(["cant", params.srcpoke, "attract"])}],
-//    59 %f was prevented from healing!|%s can't use %m because of Heal Block!|%s's heal block wore off!
-    59: [function(params) {this.addCommand(["-start", params.foepoke, "healblock"])},
-        function(params) {this.addCommand(["cant", params.srcpoke, "healblock", Tools.getMoveName(params.other)])},
-        function(params) {this.addCommand(["-end", params.srcpoke, "healblock"])}],
-//    60 %s regained health!
-//    61 %s regained health!|The healing wish came true!|It became cloaked in mystical moonlight!
-    61: [undefined, function(){this.damageCause.from="healingwish"}, function(){this.damageCause.from="lunardance"}],
-//    62 %s swapped its defense and attack!
-    62: function(params) {this.addCommand(["-start", params.srcpoke, "powertrick"])},
-//    63 %s is ready to help %f!
-//    64 %s kept going and crashed!
-//    67 %s sealed the opponent's move(s)!|%s cannot use the sealed %m!
-    67: [function(params){this.addCommand(["-start", params.srcpoke, "imprison"])}, function(params){this.addCommand(["cant", params.srcpoke, "imprison", Tools.getMoveName(params.other)])}],
-//68 %s levitated with electromagnetism!|%s electromagnetism wore off!
-    68: function(params){this.addCommand([params.part == 0 ? "-start" : "-end", params.srcpoke, "magnetrise"])},
-//    70 %s knocked off %f's %i!
-    70: function(params){this.addCommand(["-enditem", params.foepoke, Tools.getItemName(params.other)], {from: "knockoff"})},
-//72 It doesn't affect %s...|%f was seeded!|%s's health is sapped by leech seed.
-    72: [undefined, function(params){this.addCommand("-start", params.srcpoke, "leechseed")}, function(){this.damageCause.from="leechseed"}],
-//73 Reflect raised %ts's team defense!|Light Screen raised %ts's team special defense!|Reflect raised %ts's team defense slightly!|Light Screen raised %ts's team special defense slightly!|%ts's reflect wore off!|%ts's light screen wore off!
-    73: function(params) {
-        var part = params.part;
-        this.addCommand([part < 4 ? "-sidestart" : "-sideend", params.srcpoke, part % 2 ? "lightscreen" : "reflect"]);
-    },
-//    74 %s took aim at %f!
-//    75 %ts's team is protected from critical hits!|%ts's Lucky Chant wore off!
-    75: function(params) {this.addCommand([params.part == 0 ? "-start":"-end", params.srcpoke, "luckychant"])},
-//    76 %s shrouded itself with Magic Coat!|%s's %m was bounced back by Magic Coat!|%s's %m was bounced back by Magic Mirror!
-    76: [function(params){this.addCommand(["-singleturn", params.srcpoke, "magiccoat"])},
-        function(params) {this.addCommand(["-activate", params.foepoke, "magiccoat", Tools.getMoveName(params.other)], {of: params.srcpoke})},
-        function(params) {this.addCommand(["-activate", params.foepoke, "magicmirror", Tools.getMoveName(params.other)], {of: params.srcpoke})}],
-//    77 %s cleared the field around %tf's team!|%s cleared the field!
-    77: undefined, //defog
-//78 Magnitude %d!
-    78: function(params){this.addCommand(["-activate", params.srcpoke, "magnitude", params.other])},
-//    81 %s learned %m!
-    81: function(params){this.addCommand(["-activate", params.srcpoke, "mimic", Tools.getMoveName(params.other)])},
-//    82 But nothing happened!
-    82: function(params){this.addCommand(["-nothing", params.srcpoke])},
-//    84 %s identified %f!
-    84: function(params){this.addCommand(["-start", params.foepoke, "foresight"])},
-//    86 %ts's team became shrouded in mist!|%ts's Mist wore off!|The mist prevents %f from having its stats lowered!
-    86: function(params){
-        var part = params.part;
-        var effects = ["-sidestart", "-sideend", "-activate"];
-        var poke = [params.srcpoke, params.srcpoke, params.foepoke];
-        this.addCommand([effects[part], poke[part], "mist"]);
-    },
-//    87 %s regained health!|%s regained a lot of health!|%s regained little health!
-//    88 Electric's power has been weakened!|Fire's power has been weakened!
-    88: function(params) { this.addCommand(["-start", params.srcpoke, params.part == 0 ? "mudsport" : "watersport"]);},
-//    92 %s began having a nightmare!|%s is locked in a nightmare!
-    90: [function(params){this.addCommand(["-start", params.srcpoke, "nightmare"])},
-        function(){this.damageCause.from = "nightmare"}],
-//    93 %s calmed down!|%s became confused due to fatigue!
-//    94 The battlers shared their pain!
-//    94: function(){this.damageCause.from = "painsplit"},
-//    95 All Pokémon hearing the song will faint in three turns!|%s's perish count fell to %d.
-    95: [function(){this.addCommand(["-fieldactivate", "perishsong"])},
-        function(params){this.addCommand(["-start", params.srcpoke, "perish"+params.other])}],
-//96 %s's present healed %f some HP!
-    96: function(){this.damageCause.from = "move: Present"},
-//97 %s copied %f's stat changes!
-//98 %s moved its status onto %f!
-    98: function(params){this.addCommand(["-curestatus", params.srcpoke, "psychoshift"], {from: params.foepoke})},
-//    102 %s's rage is building!
-//103 %s got free of %f's %m!|%s blew away Leech Seed!|%s blew away Spikes!|%s blew away Toxic Spikes!|%s blew away Stealth Rock!
-    103: function(params) {
-        var effects = ["partiallytrapped", "leechseed", "spikes", "toxicspikes", "stealthrock"];
-        this.addCommand(["-end", params.srcpoke, effects[params.part]], {from: "rapidspin"});
-    },
-//104 %s prepared a gust of wind!|%s became cloaked in a harsh light!|%s tucked in its head!|%s absorbed light!|%s became cloaked in a freezing light!|%s became cloaked in freezing air!
-    104: function(params){this.addCommand(["-prepare", params.srcpoke, "move: "+Tools.getMoveName(params.other)]);},
-//    105 %s recycled %i!
-    105: function(params){this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other)], {from: "recycle"})},
-//    106 %s went to sleep and became healthy!
-    106: function(){this.damageCause.from="rest"},
-//    107 %s held on to the ground using its Suction Cups!|%s is solidly rooted to the ground!|%f was dragged out!
-//    108 %s copied %f's %a!
-    108: function(params){this.addCommand(["-ability", params.srcpoke, Tools.getAbilityName(params.other)], {from: "roleplay", of: params.foepoke})},
-//109 %ts's team became cloaked in a mystical veil!|%ts's team is no longer protected by Safeguard!|Safeguard prevents %f from being inflicted by status!
-    109: function(params){
-        var part = params.part;
-        var effects = ["-sidestart", "-sideend", "-activate"];
-        var poke = [params.srcpoke, params.srcpoke, params.foepoke];
-        this.addCommand([effects[part], poke[part], "safeguard"]);
-    },
-//    111 %s sketched %m!
-    111: function(params){this.addCommand(["-activate", params.srcpoke, "sketch", Tools.getMoveName(params.other)])},
-//    112 %s swapped abilities with its target!
-    112: function(params){this.addCommand(["-activate", params.srcpoke, "skillswap"])},
-//    114 %s's Damp prevents it from working!
-//118 %s snatched %f's move!|%s waits for a target to make a move!
-    118: function(params){this.addCommand(["-activate", params.srcpoke, "snatch"], {of:params.foepoke})},
-//121 Spikes were scattered all around the feet of %tf's team!|%s is hurt by spikes!
-    121: [function(params){this.addCommand(["-sidestart", params.foepoke, "spikes"])},
-        function(){this.damageCause.from = "spikes"}],
-//122 %s released!
-//    123 It reduced the PP of %f's %m by 4!
-    123: function(params){this.addCommand(["-activate", params.foepoke, "spite", Tools.getMoveName(params.other), 4])},
-//124 Pointed stones float in the air around %tf's team!|Pointed stones dug into %s!
-    124: [function(params){this.addCommand(["-sidestart", params.foepoke, "stealthrock"])},
-        function(){this.damageCause.from = "stealthrock"}],
-//125 %s stockpiled %d!
-    125: function(params){this.addCommand(["-start", params.srcpoke, "stockpile"+params.other])},
-//    127 %s is hit with recoil!
-//    128 %s already has a substitute.|%s's substitute faded!|%f's substitute blocked %m!|%s's substitute took the damage!|%s made a substitute!
-    128: [function(params){this.addCommand(["-start", params.foepoke, "substitute"], {akready:true})}, undefined,
-        function(params){this.addCommand(["-start", params.foepoke, "substitute"], {block:true})},
-        function(params){this.addCommand(["-start", params.foepoke, "substitute"], {damage:true})}, undefined],
-//131 %s swallowed!
-//    132 %s switched items with %f!|%s obtained one %i!
-    132: [function(params){this.addCommand(["-activate", params.srcpoke, "trick"], {of: params.foepoke})},
-          function(params){this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other)])}],
-//    133 A tailwind started blowing behind %ts's team!|%ts's team tailwind petered out!
-    133: function(params){this.addCommand([params.part == 0 ? "-sidestart":"-sideend", params.srcpoke, "tailwind"])},
-//    134 %s can't use %m after the taunt!|%f fell for the taunt!|%s's taunt ended!
-    134: function(params) {
-        if (params.part == 0) {
-            this.addCommand(["cant", params.srcpoke, "taunt", Tools.getMoveName(params.other)]);
-        } else if (params.part == 1) {
-            this.addCommand(["-start", params.foepoke, "taunt"]);
-        } else {
-            this.addCommand(["-end", params.foepoke, "taunt"]);
-        }
-    },
-//    135 %f is now tormented!
-    135: function(params) {this.addCommand(["-start", params.foepoke, "torment"]);},
-//    136 Poison spikes were scattered all around the feet of %tf's team!|The poison spikes disappeared around %s's feet!
-    136: [function(params){this.addCommand([params.part == 0 ? "-sidestart" : "-sideend", params.part == 0 ? params.foepoke : params.srcpoke, "stealthrock"])}],
-//    137 %s transformed into %p!
-    137: function(params){this.addCommand(["-transform", params.srcpoke, params.foepoke])},
-//    138 %s twisted the dimensions!|The twisted dimensions returned to normal!
-    138: function(params){this.addCommand([params.part==0?"-fieldstart":"-fieldend", params.srcpoke, "trickroom"])},
-//    141 %s caused an uproar!|%s is making an uproar!|%s calmed down!|%s woke up!|%s stays awake because of the uproar!
-    141: function(params) {
-        if (params.part == 0) {
-            this.addCommand(["-start", params.srcpoke, "uproar"]);
-        } else if (params.part == 2) {
-            this.addCommand(["-end", params.srcpoke, "uproar"]);
-        } else if (params.part == 3) {
-            this.damageCause.from="uproar";
-        } else if (params.part == 4) {
-            this.addCommand(["-activate", params.srcpoke, "uproar"]);
-        }
-    },
-//    142 %q's wish came true!
-    142: function(params){this.damageCause.from = "wish"; this.damgeCause.wisher=params.data},
-//143 %f now has %a!
-    143: function(params){this.addCommand(["-ability", params.foepoke, Tools.getAbilityName(params.other)])},
-//    144 %s made %f feel drowsy!|%s yawns!|%s's %a made it ineffective!
-    144: [function(params) {this.addCommand(["-start", params.foepoke, "yawn"])},undefined,undefined],
-//149 All stat changes were eliminated!|%f's stat changes were eliminated!|Haze wafted through the field!
-    149: [function(){this.addCommand(["-clearallboost"])}, function(params){this.addCommand(["-clearboost", params.foepoke])}],
-//150 %s landed on the ground!
-    150: [function(){this.damageCause.from="roost"}],
-//    151 %s planted its roots!|%s absorbed nutrients with its roots!
-    151: [function(params){this.addCommand(["-start", params.srcpoke, "ingrain"])}, function(){this.damageCause.from = "ingrain"}],
-//    155 %s and %f had their power shared!|%s and %f had their defenses shared!
-//    156 %s cancelled the items' effects!|The items are now working again!
-    156: function(params){this.addCommand([params.part==0?"-fieldstart":"-fieldend", params.srcpoke, "magicroom"])},
-//157 %s became of the Water type!
-    157: function(params) {this.addCommand(["-start", params.srcpoke, "typechange", "Water"])},
-//    158 %f gained %a!
-    158: function(params){this.addCommand(["-ability", params.foepoke, Tools.getAbilityName(params.other)])},
-//    160 %f's %i burned!
-    160: function(params){this.addCommand(["-enditem", params.foepoke, Tools.getItemName(params.other)], {from:"incinerate"})},
-//162 %s gave %f its %i!
-    162: function(params){
-        this.addCommand(["-enditem", params.srcpoke, Tools.getItemName(params.other)], {from:"bestow"});
-        this.addCommand(["-item", params.foepoke, Tools.getItemName(params.other)], {from:"bestow"});
-    },
-//    164 %s's status cleared!
-//168 %s swapped the Sp. Def. and the Defense of all the pokemon!|The Sp. Def and Defense of the pokemon went back to normal!
-    168: function(params){this.addCommand([params.part==0?"-fieldstart":"-fieldend", params.srcpoke, "wonderroom"])},
-    //169:  %ts's team is protected by Wide Guard!|%ts's team Wide Guard was broken!
-    169: function(params){this.addCommand([params.part==0?"-start":"-end", params.srcpoke, "wideguard"])},
-//    170 %ts's team is protected by Quick Guard!|%ts's team Quick Guard was broken!
-    170: function(params){this.addCommand([params.part==0?"-start":"-end", params.srcpoke, "quickguard"])},
-//    171 %s is being sent back!
-//    172 %s type changed to match %f's types!
-//174 %f was hurled into the air!|%s was freed from the telekinesis!
-    174: function(params){this.addCommand([params.part==0?"-start":"-end", params.part==0?params.foepoke: params.srcpoke, "telekinesis"])},
-//    175 %s fell straight down!
-    175: function(params){this.addCommand(["-start", params.srcpoke, "smackdown"])}
-//    178 %s prepares its %m!|It is completely synchronised with %f!|%ts's team is standing on a burning field!|%s is hurt by the sea of fire!
-//179 %s prepares its %m!|It is completely synchronised with %f!|%ts's team is floundering in a swamp!
-//180 %s prepares its %m!|It is completely synchronised with %f!|%ts's team is under an amplifying rainbow!
-//190 %f took the kind offer!
-//    191 #
-
-};
-
-BattleTab.prototype.dealWithMovemessage = function(params) {
-    var f = BattleTab.movesToPS[params.move];
-    if (!f) {
-        return;
-    }
-    if (Array.isArray(f)) {
-        f = f[params.part];
-    }
-    if (!f) {
-        return;
-    }
-    if (params.spot != -1) {
-        params.srcpoke = this.spotToPlayer(params.spot);
-    }
-    if (params.foe != -1) {
-        params.foepoke = this.spotToPlayer(params.foe);
-    }
-    f.call(this, params);
-};
-
-BattleTab.abilitiesToPS = {
-//        2 %s's Aftermath damages %f!
-    2: function(params) {
-        this.damageCause.from = "ability: Aftermath";
-        this.damageCause.of = params.srcpoke;
-    },
-//        3 %s is extremely pissed off!
-    3: function() {
-        this.damageCause.from = "ability: Angerpoint";
-    },
-//    4 %s's Anticipation makes it shiver!
-    4: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Anticipation"]);
-    },
-//6 %f has bad dreams!
-    6: function() {
-        this.damageCause.from = "ability: Bad Dreams";
-    },
-//    9 %s's Color Change changes its type to %t!
-    9: function(params) {
-        this.addCommand(["-start", params.srcpoke, "typechange", Tools.getTypeName(params.type)], {from: "ability: Color Change"});
-    },
-//11 %s's Cute Charm infatuated %f!
-    11: function(params) {
-        this.addCommand(["-activate", params.foepoke, "attract"], {of: params.srcpoke});
-    },
-//12 %s won't flinch because of its Inner Focus!
-    12: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Inner Focus"]);
-    },
-//13 %s's Download activates!
-    13: function() {
-        this.damageCause.from = "ability: Download";
-    },
-//14 %s's Snow Warning whipped up a hailstorm!|%s's Drizzle made it rain!|%s's Sand Stream whipped up a sandstorm!|%s's Drought intensified the sun's rays!
-//15 %s restored HP using its Dry Skin!|%s's Dry Skin hurts it!
-    15: function() {
-        this.damageCause.from = "ability: Dry Skin";
-    },
-//16 %s's Effect Spore activates!
-    16: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Effect Spore"]);
-    },
-//18 %s's %a activates!
-    18: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-    },
-//19 %s's Flash Fire raised the power of its Fire-type moves!|%s's Flash Fire made %m ineffective!
-    19: function(params) {
-        this.addCommand(["-start", params.srcpoke, "ability: Flash Fire"]);
-    },
-//    21 %s changed its type to %t!
-    21: function(params) {
-        this.addCommand(["-start", params.srcpoke, "typechange", Tools.getTypeName(params.type)], {from: "ability: Forecast"});
-    },
-//    22 %s's Forewarn makes it wary of %m!
-    22: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "forewarn", Tools.getMoveName(params.other)]);
-    },
-//23 %s knows its foe holds %i because of Frisk!
-    23: function(params) {
-        this.addCommand(["-item", params.foepoke, Tools.getItemName(params.other)], {of: params.srcpoke, from: "ability: Frisk"});
-    },
-//    24 %s's Shield Dust blocked the secondary effects!
-    24: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Shield Dust"]);
-    },
-//29 %s's Hydration heals its status!
-    29: function() {
-        this.damageCause.from = "ability: Hydration";
-    },
-//30 %s's %a prevents its stat from being lowered!
-    30: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params)]);
-    },
-//31 %s's %a prevented its stats from being lowered!
-    31: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params)]);
-    },
-//32 %s's %a heals it!
-    32: function(params) {
-        this.damageCause.from = "ability: " + Tools.getAbilityName(params.other);
-    },
-//33 %s's %a cures it!|%s didn't get paralyzed because of its %a!|%s stayed awake because of its %a!|%s didn't get frozen because of its %a!|%s didn't get burnt because of its %a!|%s didn't get poisoned because of its %a!
-    33: function(params) {
-        if (params.part == 0) {
-            this.damageCause.from = "ability: " + Tools.getAbilityName(params.other);
-        } else {
-            this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-        }
-    },
-//34 %s intimidates %f!|%f's substitute suppressed %s's Intimidate!
-    34: function(params) {
-        if (params.part == 0) {
-            this.addCommand(["-ability", params.srcpoke, "Intimidate"], {of: params.foepoke});
-        }
-    },
-//    37 %s's Leaf Guard prevents it from being affected by any status from the opponent!
-    37: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Leafguard"]);
-    },
-//38 %s's %a took the attack!|%s's %a raised its special attack!|%s's %a made the attack useless!
-    38: function(params) {
-        if (params.part == 0 || params.part == 2) {
-            this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-        } else {
-            this.damageCause.from = "ability: " + Tools.getAbilityName(params.other);
-        }
-    },
-//40 %s has %a!
-    40: function(params) {
-        this.addCommand(["-ability", params.srcpoke, Tools.getAbilityName(params.other)]);
-    },
-//    41 %s's Motor Drive raises its speed!
-    41: function() {
-        this.damageCause.from = "ability: Motor Drive";
-    },
-//44 %s's Own Tempo cures its confusion!|%s's Own Tempo prevented it from getting confused!
-    44: function(params) {
-        if (params.part == 0) {
-            this.damageCause.from = "ability: Own Tempo";
-        } else {
-            this.addCommand(["-activate", params.srcpoke, "ability: Own Tempo"]);
-        }
-    },
-//    45 %s restored HP using its Poison Heal!
-    45: function() {
-        this.damageCause.from = "ability: Poison Heal";
-    },
-//    46 %s is exerting its Pressure!
-    46: function(params) {
-        this.addCommand(["-ability", params.srcpoke, "Pressure"]);
-    },
-//    47 %s's ability became Mummy!
-    47: function(params) {
-        this.addCommand(["-ability", params.srcpoke, "Mummy"]);
-    },
-//50 %s's %a hurts %f
-    50: function(params) {
-        this.damageCause.from = "ability: " + Tools.getAbilityName(params.ability);
-        this.damageCause.of = params.srcpoke;
-    },
-//54 %s's Shed Skin heals its status!
-    54: function() {
-        this.damageCause.from = "ability: Shed Skin";
-    },
-//55 %s can't get it going because of it's Slow Start!|%s finally got its act together!
-    55: function(params) {
-        this.addCommand(["-start", params.srcpoke, "ability: Slow Start"]);
-    },
-//    56 %s lost some HP because of Solar Power!
-    56: function() {
-        this.damageCause.from = "ability: Solar Power";
-    },
-//    57 %s's Sound Proof blocks the attack!
-    57: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Sound Proof"]);
-    },
-//58 %s's Speed Boost increases its speed!|%s's Justice Heart increases its attack!
-    58: function(params) {
-        this.damageCause.from = (params.part == 0 ? "ability: Speed Boost": "ability: Justice Heart");
-    },
-//    60 %s's SteadFast increases its speed!
-    60: function() {
-        this.damageCause.from = "ability: SteadFast";
-    },
-//61 %s's Synchronize changes the status of %f!
-    61: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Synchronize"]);
-    },
-//66 %s traced %f's %a!
-    66: function(params) {
-        this.addCommand(["-ability", params.srcpoke, Tools.getAbilityName(params.other)], {from: "Ability: Trace", of: params.foepoke});
-    },
-//67 %s is carelessly slacking off!
-    67: function(params) {
-        this.addCommand(["cant", params.srcpoke, "ability: Truant"]);
-    },
-//    68 %s's %a raised its attack!|%s's %a made the attack useless!
-    68: function(params) {
-        if (params.part == 0) {
-            this.damageCause.from = Tools.getAbilityName(params.other);
-        } else {
-            this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-        }
-    },
-//    70 %s's %a absorbs the attack!|%s's %a made the attack useless!
-    70: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-    },
-//    71 %s's Wonder Guard evades the attack!
-    71: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: " + Tools.getAbilityName(params.other)]);
-    },
-//74 %s lost part of its armor!
-    74: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Battle Armor"]);
-    },
-//    78 %s stole %f's %i!
-    78: function(params) {
-        this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other)], {of: params.foepoke, from: "ability: Pickpocket"});
-        this.addCommand(["-enditem", params.foepoke, Tools.getItemName(params.other)], {silent: true, from: "ability: Pickpocket"});
-    },
-//80 %s's Defiant sharply raised its Attack!
-    80: function() {
-        this.damageCause.from = "ability: Defiant";
-    },
-//81 %s transformed into %p!
-    81: function(params) {
-        this.addCommand(["transform", params.srcpoke, params.foepoke]);
-    },
-//    85 %s avoided %f's attack thanks to its Telepathy!
-    85: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Telepathy"], {of: params.foepoke});
-    },
-//86 %s regains health with its Regenerator!
-    86: function() {
-        this.damageCause.from = "ability: Regenerator";
-    },
-//    88 %s's gained a %i thanks to its Harvest!
-    88: function(params) {
-        this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other)], {from: "ability: Harvest"});
-    },
-//90 %s's Miracle Skin protected it from status!
-//91 %s held on thanks to Sturdy!
-    91: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Sturdy"]);
-    },
-//    93 %s picked up the %i!
-    93: function(params) {
-        this.addCommand(["-item", params.srcpoke, Tools.getItemName(params.other), {from: "ability: Pickup"}]);
-    },
-//    94 %s's Justice Heart raises its attack!
-    94: function() {
-        this.damageCause.from = "ability: Justice Heart";
-    },
-//95 %s's Moody sharply raises its %st!|%s's Moody lowers its %st!
-    95: function() {
-        this.damageCause.from = "ability: Moody";
-    },
-//    96 %s's Cursed Body activates!
-    96: function(params) {
-        this.addCommand(["-activate", params.srcpoke, "ability: Cursed Body"]);
-    },
-//97 %s raised its Speed in fear!
-    97: function() {
-        this.damageCause.from = "ability: Rattled";
-    },
-//    99 %s's Healing Heart cured %f's status!
-    99: function(params) {
-        this.damageCause.from = "ability: Healing Heart";
-        this.damageCause.of = params.srcpoke;
-    },
-//    102 %s makes %tf's team too nervous to eat Berries!
-    102: function(params) {
-        this.addCommand(["-ability", params.srcpoke, Tools.getAbilityName(params.other), players.name(this.conf.players[params.foe])]);
-    }
-};
-
-BattleTab.prototype.dealWithAbilitymessage = function(params) {
-    var f = BattleTab.abilitiesToPS[params.ability];
-    if (!f) {
-        return;
-    }
-    if (Array.isArray(f)) {
-        f = f[params.part];
-    }
-    if (!f) {
-        return;
-    }
-    if (params.spot != -1) {
-        params.srcpoke = this.spotToPlayer(params.spot);
-    }
-    if (params.foe != -1) {
-        params.foepoke = this.spotToPlayer(params.foe);
-    }
-    f.call(this, params);
 };
 
 BattleTab.prototype.add = function (log) {
@@ -1296,10 +516,10 @@ BattleTab.prototype.update = function (update) {
             if (!updated && (update.updates[i] === '')) {
                 this.me.callbackWaiting = false;
                 updated = true;
-                this.controlsElem.html('');
+                this.$controls.html('');
             }
             if (update.updates[i] === 'RESET') {
-                this.foeHintElem.html('');
+                this.$foeHint.html('');
                 var blog = this.chatFrameElem.find('.inner').html();
                 delete this.me.side;
                 this.battleEnded = false;
@@ -1318,7 +538,7 @@ BattleTab.prototype.update = function (update) {
                 this.battle.endCallback = this.updateJoinButton;
                 this.chatFrameElem.find('.inner').html(blog + '<h2>NEW GAME</h2>');
                 this.chatFrameElem.scrollTop(this.chatFrameElem.find('.inner').height());
-                this.controlsElem.html('');
+                this.$controls.html('');
                 this.battle.play();
                 this.updateJoinButton();
                 break;
@@ -1326,8 +546,8 @@ BattleTab.prototype.update = function (update) {
             if (update.updates[i].substr(0, 6) === '|chat|' || update.updates[i].substr(0, 9) === '|chatmsg|') {
                 this.battle.instantAdd(update.updates[i]);
             } else {
-                if (update.updates[i].substr(0,10) === '|callback|') this.controlsElem.html('');
-                if (update.updates[i].substr(0,12) === '| callback | ') this.controlsElem.html('');
+                if (update.updates[i].substr(0,10) === '|callback|') this.$controls.html('');
+                if (update.updates[i].substr(0,12) === '| callback | ') this.$controls.html('');
                 this.battle.add(update.updates[i]);
             }
         }
@@ -1368,7 +588,7 @@ BattleTab.prototype.update = function (update) {
     }
     if (typeof update.active !== 'undefined') {
         if (!update.active && this.me.side) {
-            this.controlsElem.html('<div class="controls"><button onclick="return battles.battle(\'' + this.id + '\').formLeaveBattle()">Leave this battle</button></div>');
+            this.$controls.html('<div class="controls"><button onclick="return battles.battle(\'' + this.id + '\').formLeaveBattle()">Leave this battle</button></div>');
         }
     }
     if (update.side) {
@@ -1477,7 +697,7 @@ BattleTab.prototype.formUseMove = function (move) {
         this.callback(this.battle, 'move2');
         return false;
     }
-    this.controlsElem.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
+    this.$controls.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
     this.send('/choose '+this.choices.join(','));
     this.notifying = false;
     updateRoomList();
@@ -1491,7 +711,7 @@ BattleTab.prototype.formSwitchTo = function (pos) {
         this.callback(this.battle, 'move2');
         return false;
     }
-    this.controlsElem.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
+    this.$controls.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
     this.send('/choose '+this.choices.join(','));
     this.notifying = false;
     updateRoomList();
@@ -1516,7 +736,7 @@ BattleTab.prototype.formTeamPreviewSelect = function (pos) {
     } else {
         pos = pos+1;
     }
-    this.controlsElem.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
+    this.$controls.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div> <br /><button onclick="battles.battle(\'' + this.id + '\').formKickInactive();return false"><small>Kick inactive player</small></button>');
     this.send('/team '+(pos));
     this.notifying = false;
     updateRoomList();
@@ -1544,13 +764,13 @@ BattleTab.prototype.formLeaveBattle = function () {
 
 BattleTab.prototype.formSelectSwitch = function () {
     this.hideTooltip();
-    this.controlsElem.find('.controls').attr('class', 'controls switch-controls');
+    this.$controls.find('.controls').attr('class', 'controls switch-controls');
     return false;
 };
 
 BattleTab.prototype.formSelectMove = function () {
     this.hideTooltip();
-    this.controlsElem.find('.controls').attr('class', 'controls move-controls');
+    this.$controls.find('.controls').attr('class', 'controls move-controls');
     return false;
 };
 
@@ -1597,7 +817,7 @@ BattleTab.prototype.showTooltip = function(thing, type, elem, ownHeight, isActiv
             if (!accuracy || accuracy === true) accuracy = '&mdash;';
             else accuracy = '' + accuracy + '%';
             text = '<div class="tooltipinner"><div class="tooltip">';
-            text += '<h2>' + move.name + '<br />'+Tools.getTypeIcon(move.type)+' <img src="' + Tools.resourcePrefix + 'sprites/categories/' + move.category + '.png" alt="' + move.category + '" /></h2>';
+            text += '<h2>' + move.name + '<br />'+Tools.getTypeIcon(move.type)+' <img src="' + Tools.resourcePrefix + 'images/categories/' + move.category + '.png" alt="' + move.category + '" /></h2>';
             text += '<p>Base power: ' + basePower + '</p>';
             text += '<p>Accuracy: ' + accuracy + '</p>';
             if (move.desc) {
@@ -1671,6 +891,7 @@ BattleTab.prototype.showTooltip = function(thing, type, elem, ownHeight, isActiv
 };
 
 BattleTab.prototype.updateControlsForPlayer = function() {
+    console.log("updating control for player");
     var battle = this.battle;
 
     this.callbackWaiting = true;
@@ -1826,7 +1047,7 @@ BattleTab.prototype.updateControlsForPlayer = function() {
                     movebuttons += '<button disabled="disabled"' + this.tooltipAttrs(moveData.move, 'move') + '>';
                     hasDisabled = true;
                 } else {
-                    movebuttons += '<button class="type-' + move.type + '" name="chooseMove" value="' + Tools.escapeHTML(moveData.move) + '"' + this.tooltipAttrs(moveData.move, 'move') + '>';
+                    movebuttons += '<button class="type-' + move.type + '" name="chooseMove" slot="' + i + '" value="' + Tools.escapeHTML(moveData.move) + '"' + this.tooltipAttrs(moveData.move, 'move') + '>';
                     hasMoves = true;
                 }
                 movebuttons += name + '<br /><small class="type">' + move.type + '</small> <small class="pp">' + pp + '</small>&nbsp;</button> ';
@@ -1848,13 +1069,14 @@ BattleTab.prototype.updateControlsForPlayer = function() {
                     if (pokemon.zerohp || i < this.battle.mySide.active.length || this.choice.switchFlags[i]) {
                         controls += '<button disabled' + this.tooltipAttrs(i, 'sidepokemon') + '><span class="pokemonicon" style="display:inline-block;vertical-align:middle;'+Tools.getIcon(pokemon)+'"></span>' + Tools.escapeHTML(pokemon.name) + (!pokemon.zerohp?'<span class="hpbar' + pokemon.getHPColorClass() + '"><span style="width:'+(Math.round(pokemon.hp*92/pokemon.maxhp)||1)+'px"></span></span>'+(pokemon.status?'<span class="status '+pokemon.status+'"></span>':''):'') +'</button> ';
                     } else {
-                        controls += '<button name="chooseSwitch" value="' + i + '"' + this.tooltipAttrs(i, 'sidepokemon') + '><span class="pokemonicon" style="display:inline-block;vertical-align:middle;'+Tools.getIcon(pokemon)+'"></span>' + Tools.escapeHTML(pokemon.name) + '<span class="hpbar' + pokemon.getHPColorClass() + '"><span style="width:'+(Math.round(pokemon.hp*92/pokemon.maxhp)||1)+'px"></span></span>'+(pokemon.status?'<span class="status '+pokemon.status+'"></span>':'')+'</button> ';
+                        controls += '<button name="chooseSwitch" slot="' + i + '" value="' + i + '"' + this.tooltipAttrs(i, 'sidepokemon') + '><span class="pokemonicon" style="display:inline-block;vertical-align:middle;'+Tools.getIcon(pokemon)+'"></span>' + Tools.escapeHTML(pokemon.name) + '<span class="hpbar' + pokemon.getHPColorClass() + '"><span style="width:'+(Math.round(pokemon.hp*92/pokemon.maxhp)||1)+'px"></span></span>'+(pokemon.status?'<span class="status '+pokemon.status+'"></span>':'')+'</button> ';
                     }
                 }
                 if (this.finalDecision) {
                     controls += '<em style="display:block;clear:both">You <strong>might</strong> be trapped, so you won\'t be able to cancel a switch!</em><br/>';
                 }
             }
+            controls += '<p><button onClick="battles.battle(' + this.id + ').close();">Close</button></p>';
             controls += '</div></div></div>';
             this.$controls.html(controls);
         }
@@ -1883,13 +1105,14 @@ BattleTab.prototype.updateControlsForPlayer = function() {
                 if (pokemon.zerohp || i < this.battle.mySide.active.length || this.choice.switchFlags[i]) {
                     controls += '<button disabled' + this.tooltipAttrs(i, 'sidepokemon') + '>';
                 } else {
-                    controls += '<button name="chooseSwitch" value="' + i + '"' + this.tooltipAttrs(i, 'sidepokemon') + '>';
+                    controls += '<button name="chooseSwitch" slot="' + i + '"value="' + i + '"' + this.tooltipAttrs(i, 'sidepokemon') + '>';
                 }
                 controls += '<span class="pokemonicon" style="display:inline-block;vertical-align:middle;'+Tools.getIcon(pokemon)+'"></span>' + Tools.escapeHTML(pokemon.name) + (!pokemon.zerohp?'<span class="hpbar' + pokemon.getHPColorClass() + '"><span style="width:'+(Math.round(pokemon.hp*92/pokemon.maxhp)||1)+'px"></span></span>'+(pokemon.status?'<span class="status '+pokemon.status+'"></span>':''):'') +'</button> ';
             }
+            controls += '<p><button onClick="battles.battle(' + this.id + ').close();">Close</button></p>';
             controls += '</div></div></div>';
             this.$controls.html(controls);
-            this.selectSwitch();
+            this.formSelectSwitch();
             break;
 
         case 'team':
@@ -1933,6 +1156,7 @@ BattleTab.prototype.updateControlsForPlayer = function() {
                 }
                 controls += '</div>';
             }
+            controls += '<p><button onClick="battles.battle(' + this.id + ').close();">Close</button></p>';
             controls += '</div></div>';
             this.$controls.html(controls);
             this.selectSwitch();
@@ -1949,8 +1173,163 @@ BattleTab.prototype.updateControlsForPlayer = function() {
             } else {
                 buf += '<p class="timer"><button name="setTimer" value="on"><small>Start timer</small></button></p>';
             }
+            buf += '<p><button onClick="battles.battle(' + this.id + ').close();">Close</button></p>';
             buf += '</div>';
             this.$controls.html(buf);
             break;
     }
 };
+
+BattleTab.prototype.receiveRequest = function(request) {
+    if (!request) {
+        this.side = '';
+        return;
+    }
+    request.requestType = 'move';
+
+    if (request.forceSwitch) {
+        request.requestType = 'switch';
+    } else if (request.teamPreview) {
+        request.requestType = 'team';
+    } else if (request.wait) {
+        request.requestType = 'wait';
+    }
+
+    this.choice = null;
+    this.request = request;
+    if (request.side) {
+        this.updateSideLocation(request.side, true);
+    }
+    this.notifyRequest();
+    this.updateControls();
+};
+
+BattleTab.prototype.notifyRequest = function() {
+    var oName = this.battle.yourSide.name;
+    if (oName) oName = " against "+oName;
+    switch (this.request.requestType) {
+        case 'move':
+            this.notify("Your move!", "Move in your battle"+oName, 'choice');
+            break;
+        case 'switch':
+            this.notify("Your switch!", "Switch in your battle"+oName, 'choice');
+            break;
+        case 'team':
+            this.notify("Team preview!", "Choose your team order in your battle"+oName, 'choice');
+            break;
+    }
+};
+
+BattleTab.prototype.notify = function(title, msg, type, once) {
+    /* supposed to do an alert (browser notification */
+};
+
+BattleTab.prototype.updateSideLocation = function(sideData, midBattle) {
+    if (!sideData.id) return;
+    this.side = sideData.id;
+    if (this.battle.sidesSwitched !== !!(this.side === 'p2')) {
+        sidesSwitched = true;
+        this.battle.reset(true);
+        this.battle.switchSides();
+        if (midBattle) {
+            this.battle.fastForwardTo(-1);
+        } else {
+            this.battle.play();
+        }
+        this.$chat = this.$chatFrame.find('.inner');
+    }
+};
+
+BattleTab.prototype.updateControls = function() {
+    console.log("updating controls");
+    if (this.$join) {
+        this.$join.remove();
+        this.$join = null;
+    }
+
+    var controlsShown = this.controlsShown;
+    this.controlsShown = false;
+
+    if (this.battle.playbackState === 5) {
+        console.log("seeking");
+        // battle is seeking
+        this.$controls.html('');
+        return;
+
+    } else if (this.battle.playbackState === 2 || this.battle.playbackState === 3) {
+        console.log("paused");
+        //battle is playing or paused
+//        this.$controls.html('<p><button name="skipTurn">Skip turn <i class="icon-step-forward"></i></button></p>');
+//        return;
+
+    }
+
+    console.log("tooltips");
+    // tooltips
+    var myActive = this.battle.mySide.active;
+    var yourActive = this.battle.yourSide.active;
+    var buf = '';
+    if (yourActive[1]) {
+        buf += '<div style="position:absolute;top:85px;left:320px;width:90px;height:100px;"' + this.tooltipAttrs(yourActive[1].getIdent(), 'pokemon', true, 'foe') + '></div>';
+    }
+    if (yourActive[0]) {
+        buf += '<div style="position:absolute;top:90px;left:390px;width:100px;height:100px;"' + this.tooltipAttrs(yourActive[0].getIdent(), 'pokemon', true, 'foe') + '></div>';
+    }
+    if (myActive[0]) {
+        buf += '<div style="position:absolute;top:210px;left:130px;width:180px;height:160px;"' + this.tooltipAttrs(myActive[0].getIdent(), 'pokemon', true, true) + '></div>';
+    }
+    if (myActive[1]) {
+        buf += '<div style="position:absolute;top:210px;left:270px;width:160px;height:160px;"' + this.tooltipAttrs(myActive[1].getIdent(), 'pokemon', true, true) + '></div>';
+    }
+    this.$foeHint.html(buf);
+
+    if (this.battle.done) {
+        console.log("done");
+        // battle has ended
+        this.$controls.html('<div class="controls"><p><em><button name="instantReplay"><i class="icon-undo"></i> Instant Replay</button> <button name="saveReplay"><i class="icon-upload"></i> Share replay</button></p></div>');
+
+    } else if (!this.battle.mySide.initialized || !this.battle.yourSide.initialized) {
+        console.log("empty battle");
+        // empty battle
+
+        if (this.side) {
+            if (this.battle.kickingInactive) {
+                this.$controls.html('<div class="controls"><p><button name="setTimer" value="off"><small>Stop timer</small></button> <small>&larr; Your opponent has disconnected. This will give them more time to reconnect.</small></p></div>');
+            } else {
+                this.$controls.html('<div class="controls"><p><button name="setTimer" value="on"><small>Claim victory</small></button> <small>&larr; Your opponent has disconnected. Click this if they don\'t reconnect.</small></p></div>');
+            }
+        } else {
+            this.$controls.html('<p><em>Waiting for players...</em></p>');
+            this.$join = $('<div class="playbutton"><button name="joinBattle">Join Battle</button></div>');
+            this.$battle.append(this.$join);
+        }
+
+    } else if (this.side) {
+        console.log("player");
+        // player
+        if (!this.request) {
+            if (this.battle.kickingInactive) {
+                this.$controls.html('<div class="controls"><p><button name="setTimer" value="off"><small>Stop timer</small></button> <small>&larr; Your opponent has disconnected. This will give them more time to reconnect.</small></p></div>');
+            } else {
+                this.$controls.html('<div class="controls"><p><button name="setTimer" value="on"><small>Claim victory</small></button> <small>&larr; Your opponent has disconnected. Click this if they don\'t reconnect.</small></p></div>');
+            }
+        } else {
+            this.controlsShown = true;
+            if (!controlsShown || (this.choice && this.choice.waiting)) {
+                this.updateControlsForPlayer();
+            }
+        }
+
+    } else {
+        console.log("full battle");
+        // full battle
+        this.$controls.html('<p><em>Waiting for players...</em></p>');
+
+    }
+
+    // This intentionally doesn't happen if the battle is still playing,
+    // since those early-return.
+    //app.topbar.updateTabbar();
+};
+
+loadjscssfile("js/battle/commandshandling.js", "js");
