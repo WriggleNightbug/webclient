@@ -280,6 +280,7 @@ BattleTab.prototype.onControlsChooseMove = function($obj) {
     console.log ("move " + $obj.attr("slot") + " ( " + $obj.attr("value") + ") called");
     var choice = {"type":"attack", "slot":this.myself, "attackSlot": + $obj.attr("slot")};
     this.choose(choice);
+    this.createCancelButton();
 };
 
 /**
@@ -290,6 +291,28 @@ BattleTab.prototype.onControlsChooseSwitch = function($obj) {
     console.log ("poke " + $obj.attr("slot") + " ( " + $obj.attr("value") + ") called");
     var choice = {"type":"switch", "slot":this.myself, "pokeSlot": + $obj.attr("slot")};
     this.choose(choice);
+    this.createCancelButton();
+};
+
+BattleTab.prototype.onControlsChooseTeamPreview = function($obj) {
+    console.log ("teampreview (" + $obj.attr("value") + ") called");
+    var lead = $obj.attr("value");
+    var neworder = [lead];
+    for (var i = 0; i < 6; i++) {
+        if (i != lead) {
+            neworder.push(i);
+        }
+    }
+    /* Reorder the team in memory to match the rearranged team */
+    var tpoke = this.request.side.pokemon[0];
+    this.request.side.pokemon[0] = this.request.side.pokemon[lead];
+    this.request.side.pokemon[lead] = tpoke;
+
+    var choice = {"type":"rearrange", "slot":this.myself, "neworder": neworder};
+    this.choose(choice);
+    this.request.teamPreview = false;
+    this.battle.teamPreview(false);
+    this.createCancelButton();
 };
 
 BattleTab.prototype.convertTeamToPS = function(team, slot) {
@@ -741,6 +764,10 @@ BattleTab.prototype.formTeamPreviewSelect = function (pos) {
     this.notifying = false;
     updateRoomList();
     return false;
+};
+
+BattleTab.prototype.createCancelButton = function() {
+    this.$controls.html('<div class="controls"><em>Waiting for opponent...</em> <button onclick="battles.battle(\'' + this.id + '\').formUndoDecision(); return false">Cancel</button></div>');
 };
 
 BattleTab.prototype.formUndoDecision = function (pos) {
