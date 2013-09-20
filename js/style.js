@@ -31,4 +31,40 @@ $(document).ready(function() {
 			break;
 		}
 	});
+	
+	/* Teambuilder */
+	
+	$("#pokemon-parameters .icon-gear").on('click', function() {
+		$("#team-infos").toggle();
+	});
+	
+	$(".pokemon-slot-gender-radio").on('change', function() {
+		$(this).parent().find(' .pokemon-slot-gender-checked').removeClass('pokemon-slot-gender-checked');
+		$("label[for='"+$(this).attr('id')+"']").addClass('pokemon-slot-gender-checked');
+	});
+	
+	$(".pokemon-slot-advanced").on('click', function() {
+		$(this).parent().parent().find(' .pokemon-slot-advanced-content').toggle();
+	});
+	
+	$(".pokemon-slot-hidden-power-type, .pokemon-slot-ability, .pokemon-slot-nature, .pokemon-slot-item").combobox();
+	
+	$("#save_team").on('click', function(e) {
+		e.preventDefault();
+		alert(JSON.stringify($("#team_form").serializeArray()));
+	});
+	
+	$(".pokemon-evs-value").knob({
+		min:0,
+		max:255,
+		step:4,
+		width:90,
+		height:90,
+		thickness:.06,
+		displayInput:true,
+		fgColor:'#1f5d96',
+		bgColor:'#f5f5f5',
+		font:'inherit',
+		inputColor:'#757575'
+	});
 });
