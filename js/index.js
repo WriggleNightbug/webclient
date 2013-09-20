@@ -47,9 +47,12 @@ $(function() {
 $(function() {
     var cookieRelay = $.cookie("relay");
     if (cookieRelay) {
-        $("#relay").val($.cookie("relay"));
+        $("#relay").val(cookieRelay);
     }
 
+    $("#servers-list tbody").on('click', 'tr', function() {
+        $("#advanced-connection").val($(this).find(' td:last-child').text());
+    });
     $('#channel-tabs').tabs()
         .find(".ui-tabs-nav")
         .sortable({
@@ -231,6 +234,19 @@ $(function() {
 
     $(window).unload(function () {
         localStorage.setItem("ConfirmExit", $("#option-ConfirmExit").is(":checked"));
+    });
+
+    if ($.cookie("autoload")) {
+        $("#autoload").attr("checked", true);
+        initWebsocket();
+    }
+
+    $("#autoload").click(function() {
+        if($(this).is(':checked')) {
+            $.cookie("autoload", true, {expires:365});
+        } else {
+            $.removeCookie("autoload");
+        }
     });
 });
 
@@ -512,6 +528,12 @@ function checkSocket()
     {
         displayMessage( "Websocket is null" );
     }
+}
+
+function connect() {
+    websocket.send("connect|" + $("#advanced-connection").val());
+    $("#registry-content").hide();
+    $("#client-content").show();
 }
 
 parseCommand = function(message) {
