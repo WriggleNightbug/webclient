@@ -28,7 +28,7 @@
     <div id="top-content">
         <label for="relay">Relay</label>
         <span style="float:right;" class="button" onClick="initWebsocket();">Load</span>
-        <input style="width:60%;" type="text" name="relay" id="relay" value="ws://server.pokemon-online.eu:10508" onkeydown="if(event.keyCode==13) initWebsocket();"
+        <input style="width:60%;" type="text" name="relay" id="relay" value="server.pokemon-online.eu:10508" onkeydown="if(event.keyCode==13) initWebsocket();"
                autofocus="autofocus"/>
         <br style="clear:both;" />
         <label style="position:relative;top:-2px;" for="autoload">Load Automatically</label><input type="checkbox" name="autoload" id="autoload" />
@@ -51,7 +51,6 @@
     <div id="bottom-content">
         <strong>Server Description</strong><br />
         <div id="server-description">
-            Hurr Durr
             <!-- <iframe></iframe> -->
         </div><br />
         <label for="advanced-connection">Advanced Connection</label><input type="text" name="advanced-connection" id="advanced-connection" /><br style="clear:both;" />
@@ -364,6 +363,7 @@
 <script type="text/javascript" src="js/style.js"></script>
 <!--<script src="libs/farbtastic.js" type="text/javascript"></script>-->
 <script type="text/javascript" src="libs/jquery.knob.js"></script>
+<script type="text/javascript" src="libs/jquery.cookie.js"></script>
 <script type="text/javascript" src="libs/jquery.tablesorter.min.js"></script>
 <script src="libs/md5.js"></script>
 <script src="libs/utilities.js"></script>
