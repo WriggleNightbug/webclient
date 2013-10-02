@@ -1,3 +1,4 @@
+if(!pokedex.types)pokedex.types={};
 pokedex.types.types = {
 0:"Normal",
 1:"Fighting",
@@ -16,5 +17,6 @@ pokedex.types.types = {
 14:"Ice",
 15:"Dragon",
 16:"Dark",
-17:"???",
+17:"Fairy",
+18:"???",
 };

@@ -1,3 +1,4 @@
+if(!pokedex.types)pokedex.types={};
 pokedex.types.category = {
 0:1,
 1:1,
@@ -16,5 +17,6 @@ pokedex.types.category = {
 14:2,
 15:2,
 16:2,
-17:1,
+17:2,
+18:1,
 };

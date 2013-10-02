@@ -50,9 +50,14 @@ def deal_with_file(path, gen="0", file="", type="pokes"):
     ensure_dir(output_name)
 
     print ("writing into " + output_name)
-    output = open(output_name, "w");
+    output = open(output_name, "wb");
 
-    output.write("pokedex." + type + "." + file);
+    typepath = "pokedex."+type
+    filepath = typepath+"."+file
+    output.write("if(!"+typepath+")"+typepath+"={};\n")
+    if gen != "0":
+        output.write("if(!"+filepath+")"+filepath+"=[];\n")
+    output.write(filepath);
     if gen != "0":
         output.write("[" + gen + "]")
     output.write(" = {\n")
@@ -79,12 +84,11 @@ def main(argv):
             'base_files': ['abilities', 'ability_desc', 'ability_messages']
         },
         'items': {
-            'base_files': ['items', 'berries']
+            'base_files': ['items', 'berries', 'item_useful', 'items_gen2', 'items_gen3', 'items_gen4', 'items_gen5',
+                           'berries_gen2', 'berries_gen3', 'berries_gen4', 'berries_gen5']
         },
         'types': {
-            'base_files': ["types", "category", 'type1_hp', 'type2_hp', 'type3_hp', 'type4_hp', 'type5_hp', 'type6_hp',
-                           'type7_hp', 'type8_hp', 'type9_hp', 'type10_hp', 'type11_hp', 'type12_hp', 'type13_hp',
-                           'type14_hp', 'type15_hp', 'type16_hp']
+            'base_files': ["types", "category"]
         },
         'categories': {
             'base_files': ['categories']
@@ -94,6 +98,12 @@ def main(argv):
         },
         'status': {
             'base_files': ['stats', 'status']
+        },
+        'genders': {
+            'base_files': ['genders']
+        },
+        'gens': {
+            'base_files': ['versions', 'gens']
         }
     }
     gens = ['1','2','3','4','5']

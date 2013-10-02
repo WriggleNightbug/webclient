@@ -1,5 +1,7 @@
+if(!pokedex.moves)pokedex.moves={};
+if(!pokedex.moves.type)pokedex.moves.type=[];
 pokedex.moves.type[1] = {
-0:17,
+0:18,
 7:9,
 8:14,
 9:12,
